@@ -1,21 +1,21 @@
-id = "dotfiles.top"
-name = "Top"
+id = "herdr-hogs"
+name = "Hogs"
 version = "0.1.0"
 min_herdr_version = "0.9.1"
-description = "Live CPU and memory per pane, summed over each pane's process tree"
+description = "Which panes are hogging the machine: live CPU and memory per pane, summed over each pane's process tree"
 # Reads /proc.
 platforms = ["linux"]
 
 [[actions]]
 id = "open"
-title = "Top: CPU and memory by pane"
+title = "Hogs: CPU and memory by pane"
 contexts = ["global", "workspace"]
-command = ["node", "top.mjs", "open"]
+command = ["node", "hogs.mjs", "open"]
 
 [[panes]]
-id = "top"
-title = "Top"
+id = "hogs"
+title = "Hogs 🐖"
 placement = "popup"
 width = "90%"
 height = "85%"
-command = ["node", "top.mjs"]
+command = ["node", "hogs.mjs"]

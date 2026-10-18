@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Herdr plugin: CPU and memory per pane, summed over each pane's process tree.
 //
-//   node top.mjs          interactive view (the plugin pane)
-//   node top.mjs print    one table on stdout, for scripts and agents
-//   node top.mjs open     open the plugin pane as a popup (the plugin action)
+//   node hogs.mjs          interactive view (the plugin pane)
+//   node hogs.mjs print    one table on stdout, for scripts and agents
+//   node hogs.mjs open     open the plugin pane as a popup (the plugin action)
 //
 // A process belongs to the pane whose shell it descends from. A process that
 // left that tree (a daemon reparented to init) is matched by the HERDR_PANE_ID
@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 
 const SOCKET = process.env.HERDR_SOCKET_PATH;
-const PLUGIN_ID = process.env.HERDR_PLUGIN_ID ?? "dotfiles.top";
+const PLUGIN_ID = process.env.HERDR_PLUGIN_ID ?? "herdr-hogs";
 const REFRESH_MS = 2000;
 const DETAIL_ROWS = 8;
 const CLK_TCK = Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }));
@@ -241,7 +241,7 @@ function summary(view) {
   const { herdr } = view;
   const used = os.totalmem() - os.freemem();
   return [
-    `Herdr top · ${view.rows.length} panes · ${inPanes} processes · CPU% where 100 = one core`,
+    `Herdr hogs 🐖 · ${view.rows.length} panes · ${inPanes} processes · CPU% where 100 = one core`,
     `herdr server+clients ${herdr.cpu.toFixed(1)}% ${bytes(herdr.rss)} (${herdr.count} procs) · ` +
       `load ${os.loadavg()[0].toFixed(2)} on ${os.availableParallelism()} cores · ` +
       `memory ${bytes(used)} of ${bytes(os.totalmem())} in use`,
@@ -384,10 +384,10 @@ async function runInteractive() {
 }
 
 if (!SOCKET) {
-  console.error("top: HERDR_SOCKET_PATH is not set; run this inside Herdr");
+  console.error("hogs: HERDR_SOCKET_PATH is not set; run this inside Herdr");
   process.exit(1);
 }
 const mode = process.argv[2];
 if (mode === "print") await runPrint();
-else if (mode === "open") await call("plugin.pane.open", { plugin_id: PLUGIN_ID, entrypoint: "top" });
+else if (mode === "open") await call("plugin.pane.open", { plugin_id: PLUGIN_ID, entrypoint: "hogs" });
 else await runInteractive();
