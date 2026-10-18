@@ -1,0 +1,21 @@
+id = "dotfiles.top"
+name = "Top"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Live CPU and memory per pane, summed over each pane's process tree"
+# Reads /proc.
+platforms = ["linux"]
+
+[[actions]]
+id = "open"
+title = "Top: CPU and memory by pane"
+contexts = ["global", "workspace"]
+command = ["node", "top.mjs", "open"]
+
+[[panes]]
+id = "top"
+title = "Top"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["node", "top.mjs"]
