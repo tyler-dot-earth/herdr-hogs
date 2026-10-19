@@ -412,7 +412,13 @@ const pct = (cpu) => `${cpu.toFixed(0)}%`;
 const isHot = (row) => row.cpu >= CPU_PCT || row.rss >= MEM_BYTES;
 const paneTokens = (row) => ({ hogs: "🐖", hogs_cpu: pct(row.cpu), hogs_mem: bytes(row.rss) });
 const PANE_CLEAR = { hogs: null, hogs_cpu: null, hogs_mem: null };
+const WS_CLEAR = PANE_CLEAR;
 const wsToken = (count) => (count === 1 ? "🐖" : `🐖×${count}`);
+const wsTokens = (agg) => ({
+  hogs: wsToken(agg.count),
+  hogs_cpu: pct(agg.cpu),
+  hogs_mem: bytes(agg.rss),
+});
 
 function report(kind, id, tokens) {
   const params = { [`${kind}_id`]: id, source: SOURCE, tokens, seq: nextSeq() };
@@ -431,10 +437,16 @@ async function applyMarks(view, snapshot) {
   const liveWs = new Set(snapshot.workspaces.map((w) => w.workspace_id));
   const hot = view.rows.filter(isHot);
   const hotIds = new Set(hot.map((r) => r.id));
+  // Per hot workspace: pig count plus summed CPU/RSS of its hot panes.
   const perWs = new Map();
   for (const row of hot) {
     const ws = paneWs.get(row.id);
-    if (ws) perWs.set(ws, (perWs.get(ws) ?? 0) + 1);
+    if (!ws) continue;
+    const cur = perWs.get(ws) ?? { count: 0, cpu: 0, rss: 0 };
+    cur.count++;
+    cur.cpu += row.cpu;
+    cur.rss += row.rss;
+    perWs.set(ws, cur);
   }
   const jobs = [];
   for (const row of hot) jobs.push(report("pane", row.id, paneTokens(row)));
@@ -443,10 +455,10 @@ async function applyMarks(view, snapshot) {
   for (const id of new Set([...marked.panes, ...leftovers])) {
     if (!hotIds.has(id) && paneWs.has(id)) jobs.push(report("pane", id, PANE_CLEAR));
   }
-  for (const [ws, count] of perWs) jobs.push(report("workspace", ws, { hogs: wsToken(count) }));
+  for (const [ws, agg] of perWs) jobs.push(report("workspace", ws, wsTokens(agg)));
   const wsLeft = snapshot.workspaces.filter((w) => w.tokens?.hogs).map((w) => w.workspace_id);
   for (const ws of new Set([...marked.workspaces, ...wsLeft])) {
-    if (!perWs.has(ws) && liveWs.has(ws)) jobs.push(report("workspace", ws, { hogs: null }));
+    if (!perWs.has(ws) && liveWs.has(ws)) jobs.push(report("workspace", ws, WS_CLEAR));
   }
   marked.panes = hotIds;
   marked.workspaces = new Set(perWs.keys());
@@ -457,7 +469,7 @@ async function applyMarks(view, snapshot) {
 async function clearMarks() {
   const jobs = [];
   for (const id of marked.panes) jobs.push(report("pane", id, PANE_CLEAR));
-  for (const ws of marked.workspaces) jobs.push(report("workspace", ws, { hogs: null }));
+  for (const ws of marked.workspaces) jobs.push(report("workspace", ws, WS_CLEAR));
   marked.panes = new Set();
   marked.workspaces = new Set();
   await Promise.all(jobs);

@@ -29,7 +29,13 @@ A hot pane gets display-only pane tokens via `pane.report_metadata` (source `her
 | `hogs_cpu` | `329%` |
 | `hogs_mem` | `3.7G` |
 
-Its workspace gets `hogs` = `🐖` (one hot pane) or `🐖×2` (count of hot panes) via `workspace.report_metadata`.
+Its workspace gets the same three tokens via `workspace.report_metadata`, summed over that workspace's hot panes:
+
+| token | example |
+| --- | --- |
+| `hogs` | `🐖` or `🐖×2` |
+| `hogs_cpu` | `329%` |
+| `hogs_mem` | `3.7G` |
 
 Tokens are cleared as soon as a pane cools down. Every report also carries a TTL (3× the refresh, 6 s by default) and a `seq`, so if the marker dies the pigs vanish on their own and a stale report never overwrites a newer one. Nothing is renamed and no toasts are sent.
 
@@ -49,19 +55,21 @@ Herdr startup hooks are one-shot, so `[[startup]]` runs `mark-start`, which spaw
 
 ### Showing the pig
 
-The tokens are always visible in `herdr pane get <id>` / `herdr workspace get <id>`, but the sidebar only draws custom tokens that are named in its rows. Add `$hogs` (and optionally `$hogs_cpu`, `$hogs_mem`) to `ui.sidebar.agents.rows` and `$hogs` to `ui.sidebar.spaces.rows` in Herdr's `config.toml`. Starting from the defaults:
+The tokens are always visible in `herdr pane get <id>` / `herdr workspace get <id>`, but the sidebar only draws custom tokens that are named in its rows. Add `$hogs`, `$hogs_cpu`, and `$hogs_mem` to both `ui.sidebar.agents.rows` and `ui.sidebar.spaces.rows` in Herdr's `config.toml`. Starting from the defaults:
 
 ```toml
 [ui.sidebar.agents]
 rows = [
-  ["state_icon", "machine", "workspace", "tab", "$hogs"],
-  ["agent", "$hogs_cpu", "$hogs_mem"],
+  ["state_icon", "machine", "workspace", "tab"],
+  ["agent"],
+  ["$hogs", "$hogs_cpu", "$hogs_mem"],
 ]
 
 [ui.sidebar.spaces]
 rows = [
-  ["state_icon", "workspace", "$hogs"],
+  ["state_icon", "workspace"],
   ["branch", "git_status"],
+  ["$hogs", "$hogs_cpu", "$hogs_mem"],
 ]
 ```
 
