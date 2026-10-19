@@ -1,8 +1,8 @@
 id = "herdr-hogs"
 name = "Hogs"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.1"
-description = "Which panes are hogging the machine: live CPU and memory per pane, summed over each pane's process tree"
+description = "Which panes are hogging the machine: live CPU and memory per pane, summed over each pane's process tree, with 🐖 sidebar markers on hot panes"
 # Reads /proc.
 platforms = ["linux"]
 
@@ -19,3 +19,19 @@ placement = "popup"
 width = "90%"
 height = "85%"
 command = ["node", "hogs.mjs"]
+
+# One-shot: starts the detached `mark` loop (pid in $HERDR_PLUGIN_STATE_DIR/mark.pid) and exits.
+[[startup]]
+command = ["node", "hogs.mjs", "mark-start"]
+
+[[actions]]
+id = "mark-start"
+title = "Hogs: (re)start 🐖 sidebar markers"
+contexts = ["global", "workspace"]
+command = ["node", "hogs.mjs", "mark-start"]
+
+[[actions]]
+id = "mark-stop"
+title = "Hogs: stop 🐖 sidebar markers"
+contexts = ["global", "workspace"]
+command = ["node", "hogs.mjs", "mark-stop"]

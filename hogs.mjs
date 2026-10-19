@@ -4,6 +4,10 @@
 //   node hogs.mjs          interactive view (the plugin pane)
 //   node hogs.mjs print    one table on stdout, for scripts and agents
 //   node hogs.mjs open     open the plugin pane as a popup (the plugin action)
+//   node hogs.mjs mark        poll forever, tagging hot panes and workspaces with a 🐖 token
+//   node hogs.mjs mark-once   one measurement, report tokens, exit (for testing)
+//   node hogs.mjs mark-start  start `mark` detached, replacing any previous one (startup hook)
+//   node hogs.mjs mark-stop   stop the detached `mark` loop; it clears its tokens
 //
 // A process belongs to the pane whose shell it descends from. A process that
 // left that tree (a daemon reparented to init) is matched by the HERDR_PANE_ID
@@ -12,7 +16,7 @@
 // CPU% is top-style: 100 is one core, measured between two /proc samples.
 // MEM is resident set size, so memory shared between processes counts twice.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -20,7 +24,21 @@ import path from "node:path";
 
 const SOCKET = process.env.HERDR_SOCKET_PATH;
 const PLUGIN_ID = process.env.HERDR_PLUGIN_ID ?? "herdr-hogs";
-const REFRESH_MS = 2000;
+const envNum = (name, fallback) => {
+  const v = Number(process.env[name]);
+  return process.env[name] && Number.isFinite(v) && v > 0 ? v : fallback;
+};
+const GIB = 1024 ** 3;
+const REFRESH_MS = envNum("HOGS_REFRESH_MS", 2000);
+// Marker thresholds. CPU uses the same units as the table: 100 = one core.
+const CPU_PCT = envNum("HOGS_CPU_PCT", 80);
+const MEM_BYTES = envNum("HOGS_MEM_BYTES", envNum("HOGS_MEM_GIB", 1.5) * GIB);
+// Tokens expire on their own if the marker dies, so no stale pig outlives it.
+const TTL_MS = Math.round(envNum("HOGS_TTL_MS", REFRESH_MS * 3));
+const SOURCE = "herdr-hogs";
+const STATE_DIR = process.env.HERDR_PLUGIN_STATE_DIR ?? path.join(os.homedir(), ".local/state/herdr/plugins", PLUGIN_ID);
+const PID_FILE = path.join(STATE_DIR, "mark.pid");
+const LOG_FILE = path.join(STATE_DIR, "mark.log");
 const DETAIL_ROWS = 8;
 const CLK_TCK = Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }));
 const PAGE_SIZE = Number(execFileSync("getconf", ["PAGESIZE"], { encoding: "utf8" }));
@@ -383,6 +401,172 @@ async function runInteractive() {
   timer = setTimeout(tick, 1000);
 }
 
+// ---- sidebar markers -------------------------------------------------------
+
+// Strictly increasing across restarts, so a new marker's reports are never
+// ignored as older than a dead one's.
+let lastSeq = 0;
+const nextSeq = () => (lastSeq = Math.max(lastSeq + 1, Date.now()));
+
+const pct = (cpu) => `${cpu.toFixed(0)}%`;
+const isHot = (row) => row.cpu >= CPU_PCT || row.rss >= MEM_BYTES;
+const paneTokens = (row) => ({ hogs: "🐖", hogs_cpu: pct(row.cpu), hogs_mem: bytes(row.rss) });
+const PANE_CLEAR = { hogs: null, hogs_cpu: null, hogs_mem: null };
+const wsToken = (count) => (count === 1 ? "🐖" : `🐖×${count}`);
+
+function report(kind, id, tokens) {
+  const params = { [`${kind}_id`]: id, source: SOURCE, tokens, seq: nextSeq() };
+  if (Object.values(tokens).some((v) => v !== null)) params.ttl_ms = TTL_MS;
+  return call(`${kind}.report_metadata`, params).catch((err) => {
+    if (socketGone(err)) throw err;
+  }); // otherwise closed since the snapshot
+}
+
+// What this process last told Herdr, so it clears what it set promptly
+// instead of waiting for the TTL.
+const marked = { panes: new Set(), workspaces: new Set() };
+
+async function applyMarks(view, snapshot) {
+  const paneWs = new Map(snapshot.panes.map((p) => [p.pane_id, p.workspace_id]));
+  const liveWs = new Set(snapshot.workspaces.map((w) => w.workspace_id));
+  const hot = view.rows.filter(isHot);
+  const hotIds = new Set(hot.map((r) => r.id));
+  const perWs = new Map();
+  for (const row of hot) {
+    const ws = paneWs.get(row.id);
+    if (ws) perWs.set(ws, (perWs.get(ws) ?? 0) + 1);
+  }
+  const jobs = [];
+  for (const row of hot) jobs.push(report("pane", row.id, paneTokens(row)));
+  // Clear panes this process marked, plus any pig another marker left behind.
+  const leftovers = snapshot.panes.filter((p) => p.tokens?.hogs).map((p) => p.pane_id);
+  for (const id of new Set([...marked.panes, ...leftovers])) {
+    if (!hotIds.has(id) && paneWs.has(id)) jobs.push(report("pane", id, PANE_CLEAR));
+  }
+  for (const [ws, count] of perWs) jobs.push(report("workspace", ws, { hogs: wsToken(count) }));
+  const wsLeft = snapshot.workspaces.filter((w) => w.tokens?.hogs).map((w) => w.workspace_id);
+  for (const ws of new Set([...marked.workspaces, ...wsLeft])) {
+    if (!perWs.has(ws) && liveWs.has(ws)) jobs.push(report("workspace", ws, { hogs: null }));
+  }
+  marked.panes = hotIds;
+  marked.workspaces = new Set(perWs.keys());
+  await Promise.all(jobs);
+  return { hot, perWs };
+}
+
+async function clearMarks() {
+  const jobs = [];
+  for (const id of marked.panes) jobs.push(report("pane", id, PANE_CLEAR));
+  for (const ws of marked.workspaces) jobs.push(report("workspace", ws, { hogs: null }));
+  marked.panes = new Set();
+  marked.workspaces = new Set();
+  await Promise.all(jobs);
+}
+
+const thresholds = () =>
+  `cpu >= ${CPU_PCT}% or mem >= ${bytes(MEM_BYTES)} · refresh ${REFRESH_MS}ms · ttl ${TTL_MS}ms`;
+
+async function runMarkOnce() {
+  const first = await sample();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  const cur = await sample();
+  const { hot, perWs } = await applyMarks(measure(first, cur), cur.snapshot);
+  console.log(`hogs mark-once: ${thresholds()}`);
+  for (const row of hot) console.log(`🐖 ${row.id} ${row.where} cpu ${pct(row.cpu)} mem ${bytes(row.rss)}`);
+  for (const [ws, n] of perWs) console.log(`workspace ${ws}: ${wsToken(n)}`);
+  if (!hot.length) console.log("no hogs");
+}
+
+function socketGone(err) {
+  return ["ENOENT", "ECONNREFUSED", "ENOTSOCK"].includes(err?.code);
+}
+
+function readPid() {
+  try {
+    return Number(fs.readFileSync(PID_FILE, "utf8").trim()) || null;
+  } catch {
+    return null;
+  }
+}
+
+// True when pid is alive and is a `hogs.mjs mark` loop, not a reused pid.
+function isMarker(pid) {
+  try {
+    const argv = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
+    return argv.some((a) => a.endsWith("hogs.mjs")) && argv.includes("mark");
+  } catch {
+    return false;
+  }
+}
+
+async function runMark() {
+  const log = (msg) => console.log(`${new Date().toISOString()} ${msg}`);
+  let stopping = false;
+  let timer;
+  const stop = async (code, why) => {
+    if (stopping) return;
+    stopping = true;
+    clearTimeout(timer);
+    log(`stopping: ${why}`);
+    if (why !== "socket gone") await clearMarks().catch(() => {});
+    if (readPid() === process.pid) fs.rmSync(PID_FILE, { force: true });
+    process.exit(code);
+  };
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => stop(0, sig));
+
+  log(`marking: ${thresholds()} · socket ${SOCKET} · pid ${process.pid}`);
+  let prev;
+  let failures = 0;
+  let lastHot = null;
+  const tick = async () => {
+    // A newer marker took over (startup hook after a handoff): leave quietly.
+    const owner = readPid();
+    if (owner && owner !== process.pid && isMarker(owner)) return stop(0, `superseded by ${owner}`);
+    try {
+      const cur = await sample();
+      if (prev) {
+        const { hot } = await applyMarks(measure(prev, cur), cur.snapshot);
+        const now = hot.map((r) => r.id).join(" ");
+        if (now !== lastHot) log(hot.length ? `hot: ${now}` : "no hogs");
+        lastHot = now;
+      }
+      prev = cur;
+      failures = 0;
+    } catch (err) {
+      if (socketGone(err)) return stop(0, "socket gone");
+      failures++;
+      log(`error (${failures}): ${err.message}`);
+      if (failures >= 10) return stop(1, "too many errors");
+    }
+    timer = setTimeout(tick, REFRESH_MS);
+  };
+  await tick();
+}
+
+function stopMarker() {
+  const pid = readPid();
+  fs.rmSync(PID_FILE, { force: true });
+  if (pid && isMarker(pid)) {
+    process.kill(pid, "SIGTERM");
+    return pid;
+  }
+  return null;
+}
+
+function runMarkStart() {
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  const old = stopMarker();
+  const out = fs.openSync(LOG_FILE, "a");
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, "hogs.mjs"), "mark"], {
+    detached: true, // own session: outlives this one-shot hook
+    stdio: ["ignore", out, out],
+    cwd: import.meta.dirname,
+  });
+  fs.writeFileSync(PID_FILE, `${child.pid}\n`);
+  child.unref();
+  console.log(`hogs: marker pid ${child.pid}${old ? ` (replaced ${old})` : ""} · ${PID_FILE} · log ${LOG_FILE}`);
+}
+
 if (!SOCKET) {
   console.error("hogs: HERDR_SOCKET_PATH is not set; run this inside Herdr");
   process.exit(1);
@@ -390,4 +574,10 @@ if (!SOCKET) {
 const mode = process.argv[2];
 if (mode === "print") await runPrint();
 else if (mode === "open") await call("plugin.pane.open", { plugin_id: PLUGIN_ID, entrypoint: "hogs" });
-else await runInteractive();
+else if (mode === "mark") await runMark();
+else if (mode === "mark-once") await runMarkOnce();
+else if (mode === "mark-start") runMarkStart();
+else if (mode === "mark-stop") {
+  const pid = stopMarker();
+  console.log(pid ? `hogs: stopped marker ${pid}` : "hogs: no marker running");
+} else await runInteractive();
