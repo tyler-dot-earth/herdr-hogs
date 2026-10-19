@@ -55,7 +55,11 @@ Herdr startup hooks are one-shot, so `[[startup]]` runs `mark-start`, which spaw
 
 ### Showing the pig
 
-The tokens are always visible in `herdr pane get <id>` / `herdr workspace get <id>`, but the sidebar only draws custom tokens that are named in its rows. Add `$hogs`, `$hogs_cpu`, and `$hogs_mem` to both `ui.sidebar.agents.rows` and `ui.sidebar.spaces.rows` in Herdr's `config.toml`. Starting from the defaults:
+The tokens are always visible in `herdr pane get <id>` / `herdr workspace get <id>`, but the sidebar only draws custom tokens that are named in its rows. Add `$hogs`, `$hogs_cpu`, and `$hogs_mem` to both `ui.sidebar.agents.rows` and `ui.sidebar.spaces.rows` in Herdr's `config.toml`. Unreported tokens and their separators disappear, so cool panes look exactly as before. The plugin never edits `config.toml`.
+
+Three common row layouts:
+
+#### `own-line` (hog metrics on their own row)
 
 ```toml
 [ui.sidebar.agents]
@@ -73,4 +77,57 @@ rows = [
 ]
 ```
 
-The plugin never edits `config.toml`. Unreported tokens and their separators disappear, so cool panes look exactly as before.
+```
+spaces                          agents
+• notifications-idea            ● local  notifications-idea  1
+  main *                        codex
+  🐖  412%  2.1G                🐖  412%  2.1G
+```
+
+#### `end` (pig on the title row, metrics beside the agent / after the workspace)
+
+```toml
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", "machine", "workspace", "tab", "$hogs"],
+  ["agent", "$hogs_cpu", "$hogs_mem"],
+]
+
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", "workspace", "$hogs", "$hogs_cpu", "$hogs_mem"],
+  ["branch", "git_status"],
+]
+```
+
+```
+spaces                          agents
+• notifications-idea  🐖 412% 2.1G
+  main *                        ● local  notifications-idea  1  🐖
+                                codex  412%  2.1G
+```
+
+#### `first` (metrics lead the row)
+
+```toml
+[ui.sidebar.agents]
+rows = [
+  ["$hogs", "state_icon", "machine", "workspace", "tab"],
+  ["agent", "$hogs_cpu", "$hogs_mem"],
+]
+
+[ui.sidebar.spaces]
+rows = [
+  ["$hogs", "$hogs_cpu", "$hogs_mem", "state_icon", "workspace"],
+  ["branch", "git_status"],
+]
+```
+
+```
+spaces                          agents
+🐖  412%  2.1G  • notifications-idea
+  main *                        🐖  ● local  notifications-idea  1
+                                codex  412%  2.1G
+```
+
+A workspace with two hot panes shows `🐖×2` instead of `🐖`, with CPU and mem summed across those hot panes.
