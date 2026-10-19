@@ -12,7 +12,13 @@ Live CPU and memory per [herdr](https://herdr.dev) pane, summed over each pane's
 
 Linux only (reads `/proc`). Memory is RSS, so memory shared between processes counts twice. Runs `node` from your PATH.
 
-Install locally with `herdr plugin link /path/to/herdr-hogs`. Actions: `herdr-hogs.open`, `herdr-hogs.mark-start`, `herdr-hogs.mark-stop`.
+Install from GitHub:
+
+```
+herdr plugin install tyler-dot-earth/herdr-hogs
+```
+
+Or link a local checkout with `herdr plugin link /path/to/herdr-hogs`. Actions: `herdr-hogs.open`, `herdr-hogs.mark-start`, `herdr-hogs.mark-stop`.
 
 ## Sidebar markers
 
