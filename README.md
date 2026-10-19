@@ -77,11 +77,18 @@ rows = [
 ]
 ```
 
+**spaces**
 ```
-spaces                          agents
-• notifications-idea            ● local  notifications-idea  1
-  main *                        codex
-  🐖  412%  2.1G                🐖  412%  2.1G
+• notifications-idea
+  main *
+  🐖 412% 2.1G
+```
+
+**agents**
+```
+● local  notifications-idea  1
+  codex
+  🐖 412% 2.1G
 ```
 
 #### `end` (pig on the title row, metrics beside the agent / after the workspace)
@@ -100,11 +107,16 @@ rows = [
 ]
 ```
 
+**spaces**
 ```
-spaces                          agents
 • notifications-idea  🐖 412% 2.1G
-  main *                        ● local  notifications-idea  1  🐖
-                                codex  412%  2.1G
+  main *
+```
+
+**agents**
+```
+● local  notifications-idea  1  🐖
+  codex  412% 2.1G
 ```
 
 #### `first` (metrics lead the row)
@@ -123,11 +135,16 @@ rows = [
 ]
 ```
 
+**spaces**
 ```
-spaces                          agents
-🐖  412%  2.1G  • notifications-idea
-  main *                        🐖  ● local  notifications-idea  1
-                                codex  412%  2.1G
+🐖 412% 2.1G  • notifications-idea
+  main *
+```
+
+**agents**
+```
+🐖  ● local  notifications-idea  1
+  codex  412% 2.1G
 ```
 
 A workspace with two hot panes shows `🐖×2` instead of `🐖`, with CPU and mem summed across those hot panes.
