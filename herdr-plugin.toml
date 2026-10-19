@@ -1,6 +1,6 @@
 id = "herdr-hogs"
 name = "Hogs"
-version = "0.2.5"
+version = "0.2.6"
 min_herdr_version = "0.9.1"
 description = "Which panes are hogging the machine: live CPU and memory per pane, summed over each pane's process tree, with 🐖 sidebar markers on hot panes and workspaces (CPU/mem too)"
 # Reads /proc.

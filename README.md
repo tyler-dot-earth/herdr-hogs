@@ -12,7 +12,7 @@ Live CPU and memory per [herdr](https://herdr.dev) pane, summed over each pane's
 
 Linux only (reads `/proc`). Memory is RSS, so memory shared between processes counts twice. Runs `node` from your PATH.
 
-Install from GitHub:
+Install from GitHub (also how the [marketplace](https://herdr.dev/plugins/) finds this repo — topic `herdr-plugin`):
 
 ```
 herdr plugin install tyler-dot-earth/herdr-hogs
