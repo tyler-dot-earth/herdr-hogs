@@ -485,7 +485,7 @@ async function runMarkOnce() {
   const { hot, perWs } = await applyMarks(measure(first, cur), cur.snapshot);
   console.log(`hogs mark-once: ${thresholds()}`);
   for (const row of hot) console.log(`🐖 ${row.id} ${row.where} cpu ${pct(row.cpu)} mem ${bytes(row.rss)}`);
-  for (const [ws, n] of perWs) console.log(`workspace ${ws}: ${wsToken(n)}`);
+  for (const [ws, agg] of perWs) console.log(`workspace ${ws}: ${wsToken(agg.count)} cpu ${pct(agg.cpu)} mem ${bytes(agg.rss)}`);
   if (!hot.length) console.log("no hogs");
 }
 
